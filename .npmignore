@@ -1,0 +1,25 @@
+# Local test sandboxes & test artifacts
+autho-test/
+autho-next-test/
+*.zip
+*.bak
+
+# Development & System files
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs & Environment
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.local
+.env.*.local
+
+# Cache
+.cache/
+.node_repl_history
