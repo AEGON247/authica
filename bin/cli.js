@@ -428,6 +428,11 @@ for (const [k, v] of rows) body.push(...wrap(k.padEnd(11), v, 11));
 body.push("");
 body.push("Next steps");
 next.forEach((x, i) => body.push(...wrap(`${i + 1}. `, x, 3)));
+// --------------------
+body.push("");
+body.push("⭐ Loving authica? Give us a star on GitHub!");
+body.push("   https://github.com/AEGON247/authica");
+// --------------------
 const title = " authica ✔ ";
 console.log("\n╭" + title + "─".repeat(W - 2 - title.length) + "╮");
 for (const l of body) console.log("│ " + l.padEnd(inner) + " │");

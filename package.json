@@ -13,5 +13,23 @@
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "authica",
+    "auth",
+    "authentication",
+    "nextjs-auth",
+    "supabase-auth",
+    "clerk-auth",
+    "next-auth",
+    "vite-auth",
+    "tailwind-auth",
+    "login-page-generator",
+    "cli-auth"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AEGON247/authica.git"
+  },
+  "homepage": "https://github.com/AEGON247/authica#readme",
   "license": "MIT"
 }
