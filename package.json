@@ -1,6 +1,6 @@
 {
   "name": "authica",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Adds a theme-matched, animated sliding sign-in/sign-up page (split, centered or canvas) to Next.js or Vite + React Router projects.",
   "type": "module",
   "bin": {
