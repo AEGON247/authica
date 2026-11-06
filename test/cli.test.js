@@ -52,6 +52,20 @@ test("default generation retains legacy route injection and creates its backup",
   assert.match(result.stdout, /https:\/\/authica\.dev/);
 });
 
+test("--help prints colored sections, subcommands, flags, and three examples", () => {
+  const dir = fixture();
+  const result = runCli(dir, ["--help"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\u001b\[38;5;141m/);
+  assert.match(result.stdout, /\[ NPM v2\.0\.0 \]/);
+  assert.match(result.stdout, /\[ License: MIT \]/);
+  assert.match(result.stdout, /SUBCOMMANDS[\s\S]*authica audit[\s\S]*authica preview/);
+  for (const flag of ["--layout", "--style", "--auth", "--providers", "--ast-inject", "--middleware", "--force"]) {
+    assert.ok(result.stdout.includes(flag), `missing ${flag}`);
+  }
+  assert.equal((result.stdout.match(/npx authica/g) ?? []).length, 4);
+});
+
 test("opt-in AST route injection preserves formatting and creates a valid route import", () => {
   const dir = fixture();
   const original = `import { Routes } from "react-router-dom";\n\nexport default function App() {\n  return (\n    <Routes>\n    </Routes>\n  );\n}\n`;
@@ -215,8 +229,10 @@ test("preview serves the isolated studio without modifying the project", async (
     assert.ok(response, "preview server did not start");
     assert.equal(response.status, 200);
     const body = await response.text();
-    assert.match(body, /Explore layouts &amp; styles|Explore layouts & styles/);
-    assert.match(body, /glassmorphism/);
+    assert.match(body, /Authentication, styled\./);
+    for (const feature of ["#0B0B0E", "#13131A", "#22222E", "#8B5CF6", "Layout Frameworks", "Aesthetic Presets", "data-color", "data-provider", "navigator.clipboard", "data-layout", "data-style"]) {
+      assert.ok(body.includes(feature), `preview is missing ${feature}`);
+    }
     assert.deepEqual(fs.readdirSync(dir).sort(), ["package.json", "src", "tsconfig.json"]);
   } finally {
     child.kill();

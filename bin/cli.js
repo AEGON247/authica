@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline/promises";
 
@@ -9,7 +9,8 @@ const args = process.argv.slice(2);
 const created = [], modified = [], steps = [];
 let themeNote = "", rcNote = "", extraRoutes = [];
 const flag = (n) => args.includes(`--${n}`);
-const cliVersion = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+const cliPackage = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+const cliVersion = cliPackage.version;
 if (args[0] === "preview") {
   await import("./preview.js");
 } else if (args[0] === "audit") {
@@ -25,7 +26,38 @@ const opt = (n, d) => {
   return v === undefined ? d : Array.isArray(v) ? v.join(",") : String(v);
 };
 if (flag("help") || flag("h")) {
-  console.log("Usage: npx authica [--auth=none|supabase|next-auth|clerk|webauthn] [--layout=split|centered|canvas|modal|glass] [--hero=<path|url>] [--providers=google,github,...] [--style=default|brutalist|glassmorphism] [--otp|--magic-link] [--css=<file>] [--entry=<file>] [--ast-inject] [--middleware] [--scan-security] [--no-name] [--confirm] [--no-social] [--yes] [--force] [--no-install]\n       npx authica audit\n       npx authica preview");
+  const c = {
+    reset: "\u001b[0m",
+    violet: "\u001b[38;5;141m",
+    cyan: "\u001b[36m",
+    green: "\u001b[32m",
+    yellow: "\u001b[33m",
+    muted: "\u001b[90m",
+    bold: "\u001b[1m",
+  };
+  const heading = (text) => `${c.violet}${c.bold}${text}${c.reset}`;
+  console.log(`${c.violet}${c.bold}  ⚡ AUTHICA${c.reset} ${c.muted}Authentication UI generator${c.reset}`);
+  console.log(`  ${c.cyan}[ NPM v${cliVersion} ]${c.reset}  ${c.green}[ License: ${cliPackage.license} ]${c.reset}\n`);
+  console.log(`${heading("USAGE")}`);
+  console.log("  npx authica [options]\n");
+  console.log(`${heading("SUBCOMMANDS")}`);
+  console.log(`  ${c.yellow}authica audit${c.reset}       Advisory AppSec scan for likely auth tokens in localStorage`);
+  console.log(`  ${c.yellow}authica preview${c.reset}     Open the local visual studio at http://localhost:4321\n`);
+  console.log(`${heading("GENERATOR FLAGS")}`);
+  console.log("  --layout=<name>       split | centered | canvas | modal | glass");
+  console.log("  --style=<name>        default | brutalist | glassmorphism");
+  console.log("  --auth=<provider>     none | supabase | next-auth | clerk | webauthn");
+  console.log("  --providers=<list>    Comma-separated OAuth providers");
+  console.log("  --css=<file>          Global CSS file used for theme tokens");
+  console.log("  --ast-inject          Opt in to AST route insertion (Vite + React Router)");
+  console.log("  --middleware          Opt in to Next.js provider middleware generation");
+  console.log("  --scan-security       Run the advisory scan before generation");
+  console.log("  --force               Overwrite generated files (keeps backups)");
+  console.log("  --yes --no-install    Skip prompts and dependency installation\n");
+  console.log(`${heading("QUICKSTART EXAMPLES")} ${c.muted}(bash)${c.reset}`);
+  console.log(`  ${c.green}npx authica${c.reset}`);
+  console.log(`  ${c.green}npx authica --layout=glass --style=brutalist --auth=supabase --providers=google,github --yes${c.reset}`);
+  console.log(`  ${c.green}npx authica --auth=clerk --middleware --ast-inject --yes${c.reset}`);
   process.exit(0);
 }
 const fail = (m) => { console.error(`✖ ${m}`); process.exit(1); };
@@ -81,6 +113,28 @@ const askBool = async (q, def) => {
   const a = (await ask(`${q} [y/n]`, def ? "y" : "n")).toLowerCase();
   return a.startsWith("y");
 };
+let studioStarted = false;
+function launchStudio() {
+  if (!studioStarted) {
+    const previewPath = fileURLToPath(new URL("./preview.js", import.meta.url));
+    const child = spawn(process.execPath, [previewPath, "--open"], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.on("error", (error) => console.error(`Could not launch the local visual studio: ${error.message}`));
+    child.unref();
+    studioStarted = true;
+  }
+  console.log("Opening the local visual studio at http://localhost:4321; return here to continue.");
+}
+async function askWithStudio(q, def) {
+  while (true) {
+    const answer = await ask(q, def);
+    if (answer.trim().toLowerCase() !== "more") return answer;
+    launchStudio();
+  }
+}
 
 if (enabled("scan-security")) {
   const { printAudit } = await import("./ast-tools.js");
@@ -154,9 +208,9 @@ map.CARD = tok(["card", "background"], "#ffffff");
 map.CARDFG = tok(["card-foreground", "foreground"], "#0a0a0a");
 
 // ---- layout / fields / hero choices
-let layout = opt("layout", "") || (await ask("Layout:\n  split       [|====]  Modern 2-column hero layout\n  centered    [ --- ]  Floating conversion card\n  canvas      [.....]  Gradient background canvas\n  modal       [-----]  Backdrop-blur overlay dialog\n  glass       [ ~~~ ]  Translucent frosted card\nChoose layout:", "split"));
+let layout = opt("layout", "") || (await askWithStudio("Layout:\n  split       [|====]  Modern 2-column hero layout\n  centered    [ --- ]  Floating conversion card\n  canvas      [.....]  Gradient background canvas\n  modal       [-----]  Backdrop-blur overlay dialog\n  glass       [ ~~~ ]  Translucent frosted card\n  more        [ 🌐 Launch Visual Web Studio ]\nChoose layout:", "split"));
 if (!["split", "centered", "canvas", "modal", "glass"].includes(layout)) { console.warn(`⚠ Unknown layout "${layout}", using split.`); layout = "split"; }
-let style = opt("style", "") || (await ask("Visual style:\n  default        [neutral]  Shadcn-like\n  brutalist      [bold]     Hard borders and shadows\n  glassmorphism  [frosted]  Blur and glow\nChoose style:", "default"));
+let style = opt("style", "") || (await askWithStudio("Visual style:\n  default        [neutral]  Shadcn-like\n  brutalist      [bold]     Hard borders and shadows\n  glassmorphism  [frosted]  Blur and glow\n  more           [ 🌐 Launch Visual Web Studio ]\nChoose style:", "default"));
 if (!["default", "brutalist", "glassmorphism"].includes(style)) { console.warn(`⚠ Unknown style "${style}", using default.`); style = "default"; }
 let method = flag("otp") ? "otp" : flag("magic-link") ? "magic" : opt("method", "") || (await ask("Sign-in method: password, otp or magic-link?", "password"));
 if (method === "magic-link") method = "magic";

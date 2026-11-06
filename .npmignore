@@ -3,6 +3,7 @@ autho-test/
 autho-next-test/
 *.zip
 *.bak
+*.tgz
 
 node_modules/
 
