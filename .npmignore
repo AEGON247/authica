@@ -4,6 +4,8 @@ autho-next-test/
 *.zip
 *.bak
 
+node_modules/
+
 # Development & System files
 .git/
 .gitignore

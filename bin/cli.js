@@ -9,6 +9,13 @@ const args = process.argv.slice(2);
 const created = [], modified = [], steps = [];
 let themeNote = "", rcNote = "", extraRoutes = [];
 const flag = (n) => args.includes(`--${n}`);
+const cliVersion = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+if (args[0] === "preview") {
+  await import("./preview.js");
+} else if (args[0] === "audit") {
+  const { printAudit } = await import("./ast-tools.js");
+  printAudit(process.cwd());
+} else {
 let rc = {};
 const hasOpt = (n) => args.some((a) => a.startsWith(`--${n}=`)) || rc[n] !== undefined;
 const opt = (n, d) => {
@@ -18,13 +25,18 @@ const opt = (n, d) => {
   return v === undefined ? d : Array.isArray(v) ? v.join(",") : String(v);
 };
 if (flag("help") || flag("h")) {
-  console.log("Usage: npx authica [--auth=none|supabase|next-auth|clerk] [--layout=split|centered|canvas|modal|glass] [--hero=<path|url>] [--providers=google,github,...] [--style=default|brutalist|glassmorphism] [--otp|--magic-link] [--css=<file>] [--entry=<file>] [--no-name] [--confirm] [--no-social] [--yes] [--force] [--no-install]");
+  console.log("Usage: npx authica [--auth=none|supabase|next-auth|clerk|webauthn] [--layout=split|centered|canvas|modal|glass] [--hero=<path|url>] [--providers=google,github,...] [--style=default|brutalist|glassmorphism] [--otp|--magic-link] [--css=<file>] [--entry=<file>] [--ast-inject] [--middleware] [--scan-security] [--no-name] [--confirm] [--no-social] [--yes] [--force] [--no-install]\n       npx authica audit\n       npx authica preview");
   process.exit(0);
 }
 const fail = (m) => { console.error(`✖ ${m}`); process.exit(1); };
 const cwd = process.cwd();
 const p = (...x) => path.join(cwd, ...x);
 const ex = (f) => fs.existsSync(p(f));
+const enabled = (name) => {
+  const configName = { "ast-inject": "astInject", "scan-security": "scanSecurity" }[name] || name;
+  return flag(name) || rc[configName] === true || opt(name, "false") === "true";
+};
+console.log(`authica v${cliVersion} · Web Studio: https://authica.dev`);
 
 // ---- team config (.authicarc / .authicarc.json); CLI flags win over it
 const rcFile = [".authicarc", ".authicarc.json"].find(ex);
@@ -32,13 +44,13 @@ if (rcFile) {
   try { rc = JSON.parse(fs.readFileSync(p(rcFile), "utf8")); }
   catch (e) { fail(`${rcFile} is not valid JSON: ${e.message}`); }
   if (!rc || typeof rc !== "object" || Array.isArray(rc)) fail(`${rcFile} must contain a JSON object.`);
-  const known = ["auth", "layout", "style", "method", "css", "hero", "entry", "providers", "name", "confirm", "social"];
+  const known = ["auth", "layout", "style", "method", "css", "hero", "entry", "providers", "name", "confirm", "social", "astInject", "middleware", "scanSecurity"];
   const unknown = Object.keys(rc).filter((k) => !known.includes(k));
   if (unknown.length) console.warn(`⚠ ${rcFile}: ignoring unknown keys: ${unknown.join(", ")}`);
   rcNote = rcFile;
 }
 const auth = opt("auth", "none");
-if (!["none", "supabase", "next-auth", "clerk"].includes(auth)) fail(`Unknown auth "${auth}"`);
+if (!["none", "supabase", "next-auth", "clerk", "webauthn"].includes(auth)) fail(`Unknown auth "${auth}"`);
 if (!ex("package.json")) fail("No package.json found. Run this in your project root.");
 const pkg = JSON.parse(fs.readFileSync(p("package.json"), "utf8"));
 const deps = { ...pkg.dependencies, ...pkg.devDependencies };
@@ -46,10 +58,17 @@ const deps = { ...pkg.dependencies, ...pkg.devDependencies };
 // ---- detect stack
 const isNext = !!deps.next;
 const isVite = !isNext && !!deps.vite && !!(deps["react-router-dom"] || deps["react-router"]);
+const routerPackage = deps["react-router-dom"] ? "react-router-dom" : "react-router";
 if (!isNext && !isVite) fail("Unsupported project: need Next.js, or Vite + react-router(-dom).");
 if (!deps.react) fail("React not found in package.json.");
 if (!ex("tsconfig.json")) fail("TypeScript project required (tsconfig.json not found).");
 if (auth === "next-auth" && !isNext) fail("--auth=next-auth requires Next.js.");
+if (enabled("middleware") && !isNext) fail("--middleware requires a Next.js project.");
+if (enabled("middleware") && !["supabase", "clerk", "next-auth"].includes(auth)) fail("--middleware requires --auth=supabase, --auth=clerk, or --auth=next-auth.");
+if (enabled("ast-inject") && isNext) console.log("Next.js App Router uses file-system routes; no route-entry AST edit is needed.");
+if (auth === "webauthn" && (flag("otp") || flag("magic-link") || opt("method", "password") !== "password")) fail("--auth=webauthn cannot be combined with --otp or --magic-link.");
+const middlewareFile = enabled("middleware") ? (ex("src/app") ? "src/middleware.ts" : "middleware.ts") : "";
+if (middlewareFile && ex(middlewareFile) && !flag("force")) fail(`${middlewareFile} already exists. Use --force to overwrite.`);
 
 if (!deps.tailwindcss && !deps["@tailwindcss/vite"] && !deps["@tailwindcss/postcss"])
   console.warn("⚠ Tailwind CSS not detected; using self-contained CSS fallbacks.");
@@ -62,6 +81,11 @@ const askBool = async (q, def) => {
   const a = (await ask(`${q} [y/n]`, def ? "y" : "n")).toLowerCase();
   return a.startsWith("y");
 };
+
+if (enabled("scan-security")) {
+  const { printAudit } = await import("./ast-tools.js");
+  printAudit(cwd);
+}
 
 // ---- image path normalizer
 function processHeroImage(inputPath) {
@@ -130,9 +154,9 @@ map.CARD = tok(["card", "background"], "#ffffff");
 map.CARDFG = tok(["card-foreground", "foreground"], "#0a0a0a");
 
 // ---- layout / fields / hero choices
-let layout = opt("layout", "") || (await ask("Layout: split, centered, canvas, modal or glass?", "split"));
+let layout = opt("layout", "") || (await ask("Layout:\n  split       [|====]  Modern 2-column hero layout\n  centered    [ --- ]  Floating conversion card\n  canvas      [.....]  Gradient background canvas\n  modal       [-----]  Backdrop-blur overlay dialog\n  glass       [ ~~~ ]  Translucent frosted card\nChoose layout:", "split"));
 if (!["split", "centered", "canvas", "modal", "glass"].includes(layout)) { console.warn(`⚠ Unknown layout "${layout}", using split.`); layout = "split"; }
-let style = opt("style", "") || (await ask("Visual style: default, brutalist or glassmorphism?", "default"));
+let style = opt("style", "") || (await ask("Visual style:\n  default        [neutral]  Shadcn-like\n  brutalist      [bold]     Hard borders and shadows\n  glassmorphism  [frosted]  Blur and glow\nChoose style:", "default"));
 if (!["default", "brutalist", "glassmorphism"].includes(style)) { console.warn(`⚠ Unknown style "${style}", using default.`); style = "default"; }
 let method = flag("otp") ? "otp" : flag("magic-link") ? "magic" : opt("method", "") || (await ask("Sign-in method: password, otp or magic-link?", "password"));
 if (method === "magic-link") method = "magic";
@@ -148,6 +172,10 @@ if (!flag("no-social") && rc.social !== false) {
   const bad = providers.filter((x) => !ALL.includes(x));
   if (bad.length) console.warn(`⚠ Ignoring unknown providers: ${bad.join(", ")}`);
   providers = [...new Set(providers.filter((x) => ALL.includes(x)))];
+}
+if (auth === "webauthn" && providers.length) {
+  steps.push("WebAuthn starter does not configure OAuth providers; OAuth requires a provider-specific backend and route.");
+  providers = [];
 }
 const rawHero = !["split", "canvas"].includes(layout) ? "" : opt("hero", "") || (hasOpt("hero") ? "" : await ask("Hero image path or URL (blank = built-in artwork)?", ""));
 const hero = processHeroImage(rawHero);
@@ -240,6 +268,16 @@ function useAuth() {
 }`,
     pkgs: [isNext ? "@clerk/nextjs" : "@clerk/react"],
   },
+  webauthn: {
+    imports: `import { startAuthentication, startRegistration } from "@simplewebauthn/browser";\n`,
+    hook: `function useAuth() {
+  return {
+    submit: async (_mode: Mode, _d: Data) => { throw new Error("Use passkey sign-in."); },
+    social: async (_p: Social) => { throw new Error("Social sign-in is not configured for this WebAuthn starter."); },
+  };
+}`,
+    pkgs: ["@simplewebauthn/browser"],
+  },
 }[auth];
 
 const pw = method === "password";
@@ -308,6 +346,37 @@ src = src.replace("__DIRECTIVE__", () => (isNext ? '"use client";\n\n' : ""))
   .replace("__AUTH_IMPORTS__", () => hooks.imports)
   .replace("__AUTH_HOOK__", () => hooks.hook);
 for (const [k, v] of Object.entries({ ...map, LAYOUT: layout, STYLE: style, METHOD: method, SHOW_NAME: String(showName), CONFIRM: String(confirmPw), PROVIDERS: JSON.stringify(providers), HERO: JSON.stringify(hero) })) src = rep(src, k, v);
+if (auth === "webauthn") {
+  const helper = `\n\nasync function authicaPasskey(email: string, mode: Mode) {
+  const optionsResponse = await fetch("/api/generate-options", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, mode }),
+  });
+  if (!optionsResponse.ok) throw new Error("Could not start passkey sign-in.");
+  const optionsJSON = await optionsResponse.json();
+  const credential = mode === "signup"
+    ? await startRegistration({ optionsJSON })
+    : await startAuthentication({ optionsJSON });
+  const verifyResponse = await fetch("/api/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, mode, credential }),
+  });
+  if (!verifyResponse.ok) throw new Error("Passkey verification failed.");
+  window.location.href = "/";
+}`;
+  src = src.replace(hooks.hook, `${hooks.hook}${helper}`);
+  src = src.replace("const PASSWORDLESS = METHOD !== \"password\";", "const PASSWORDLESS = true;");
+  src = src.replace(
+    '<button type="submit" disabled={loading} className="as-btn">',
+    '<button type="button" disabled={loading || !emailOk} onClick={() => run(() => authicaPasskey(v.email, mode))} className="as-btn">',
+  );
+  src = src.replace(
+    '{loading ? "Please wait…" : PASSWORDLESS ? (METHOD === "otp" ? "Send code" : "Send magic link") : isLogin ? "Sign In" : "Sign Up"}',
+    '{loading ? "Please wait…" : isLogin ? "Sign in with a passkey" : "Create a passkey"}',
+  );
+}
 if (/__[A-Z]+__/.test(src)) fail("Unresolved template placeholder (internal error).");
 
 // ---- target path
@@ -330,8 +399,55 @@ if (isVite) {
   if (!file) manual();
   else {
     let c = fs.readFileSync(p(file), "utf8");
-    if (c.includes("authica")) modified.push(`${file} (already wired)`);
-    else {
+    if (c.includes("authica") || (enabled("ast-inject") && c.includes("Authica"))) modified.push(`${file} (already wired)`);
+    else if (enabled("ast-inject")) {
+      let astResult;
+      try {
+        const { insertViteRoute } = await import("./ast-tools.js");
+        astResult = insertViteRoute(c, (() => {
+          let rel = path.posix.relative(path.posix.dirname(file), "src/routes/login");
+          return rel.startsWith(".") ? rel : `./${rel}`;
+        })(), routerPackage);
+      } catch (error) {
+        console.warn(`⚠ AST route insertion could not safely parse ${file}: ${error.message}`);
+      }
+      if (astResult?.alreadyWired) {
+        modified.push(`${file} (already wired)`);
+      } else {
+        if (astResult) c = astResult.code;
+        else {
+          const before = c;
+          let rel = path.posix.relative(path.posix.dirname(file), "src/routes/login");
+          if (!rel.startsWith(".")) rel = "./" + rel;
+          if (/<Routes[\s>]/.test(c)) c = c.replace(/<Routes(\s[^>]*)?>/, (m) => `${m}\n        <Route path="/login" element={<Authica />} />`);
+          else c = c.replace(/(create\w*Router\(\s*\[)/, `$1\n  { path: "/login", element: <Authica /> },`);
+          if (c === before) {
+            manual();
+            console.log("AST fallback found no supported route position; target router was left unchanged.");
+            c = "";
+          } else {
+            let end = 0;
+            for (const m of c.matchAll(/^import\s[^;]*?['"][^'"]+['"];?[ \t]*$/gm)) end = Math.max(end, m.index + m[0].length);
+            const relImport = path.posix.relative(path.posix.dirname(file), "src/routes/login").replace(/^(?!\.)/, "./");
+            const imp = `import Authica from "${relImport}";`;
+            c = end ? c.slice(0, end) + "\n" + imp + c.slice(end) : imp + "\n" + c;
+            const routeImportPattern = new RegExp(`import\\s*\\{[^}]*\\bRoute\\b[^}]*\\}\\s*from\\s*["']${routerPackage}["']`);
+            if (/<Routes[\s>]/.test(before) && !routeImportPattern.test(c)) {
+              const routeImport = `import { Route } from "${routerPackage}";`;
+              const importEnd = [...c.matchAll(/^import\s[^;]*?['"][^'"]+['"];?[ \t]*$/gm)].reduce((end, match) => Math.max(end, match.index + match[0].length), 0);
+              c = importEnd ? c.slice(0, importEnd) + "\n" + routeImport + c.slice(importEnd) : routeImport + "\n" + c;
+            }
+          }
+        }
+        if (c) {
+          const dirty = spawnSync("git", ["status", "--porcelain", "--", file], { cwd, encoding: "utf8" });
+          if (dirty.status === 0 && dirty.stdout.trim()) console.warn(`⚠ ${file} has uncommitted changes.`);
+          if (!ex(file + ".bak")) fs.copyFileSync(p(file), p(file + ".bak"));
+          fs.writeFileSync(p(file), c);
+          modified.push(`${file} (+/login route, backup ${file}.bak)`);
+        }
+      }
+    } else {
       let rel = path.posix.relative(path.posix.dirname(file), "src/routes/login");
       if (!rel.startsWith(".")) rel = "./" + rel;
       if (/<Routes[\s>]/.test(c)) c = c.replace(/<Routes(\s[^>]*)?>/, (m) => `${m}\n        <Route path="/login" element={<authica />} />`);
@@ -347,6 +463,19 @@ if (isVite) {
       modified.push(`${file} (+/login route, backup ${file}.bak)`);
     }
   }
+}
+
+if (middlewareFile) {
+  const middleware = auth === "clerk"
+    ? `import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";\nimport { NextResponse } from "next/server";\n\nconst isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);\n\nexport default clerkMiddleware(async (auth, request) => {\n  if (!isProtectedRoute(request)) return;\n  const { userId } = await auth();\n  if (!userId) return NextResponse.redirect(new URL("/login", request.url));\n});\n\nexport const config = { matcher: ["/dashboard/:path*"] };\n`
+    : auth === "supabase"
+      ? `import { createServerClient } from "@supabase/ssr";\nimport { NextResponse, type NextRequest } from "next/server";\n\nexport async function middleware(request: NextRequest) {\n  let response = NextResponse.next({ request });\n  const supabase = createServerClient(\n    process.env.NEXT_PUBLIC_SUPABASE_URL!,\n    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,\n    { cookies: {\n      getAll: () => request.cookies.getAll(),\n      setAll: (cookies) => {\n        cookies.forEach(({ name, value }) => request.cookies.set(name, value));\n        response = NextResponse.next({ request });\n        cookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options));\n      },\n    } },\n  );\n  const { data: { user } } = await supabase.auth.getUser();\n  if (request.nextUrl.pathname.startsWith("/dashboard") && !user) {\n    const loginUrl = request.nextUrl.clone();\n    loginUrl.pathname = "/login";\n    loginUrl.searchParams.set("next", request.nextUrl.pathname);\n    return NextResponse.redirect(loginUrl);\n  }\n  return response;\n}\n\nexport const config = { matcher: ["/dashboard/:path*"] };\n`
+      : `import { withAuth } from "next-auth/middleware";\n\nexport default withAuth({ pages: { signIn: "/login" } });\n\nexport const config = { matcher: ["/dashboard/:path*"] };\n`;
+  fs.mkdirSync(path.dirname(p(middlewareFile)), { recursive: true });
+  if (ex(middlewareFile) && !ex(middlewareFile + ".bak")) fs.copyFileSync(p(middlewareFile), p(middlewareFile + ".bak"));
+  fs.writeFileSync(p(middlewareFile), middleware);
+  created.push(middlewareFile);
+  if (auth === "supabase") steps.push("Install @supabase/ssr for the generated Supabase middleware.");
 }
 
 // ---- provider notices / Clerk SSO callback route
@@ -377,7 +506,7 @@ if (method === "otp" && auth === "supabase") steps.push("Supabase email template
 if (method !== "password" && auth === "next-auth") steps.push('next-auth: add an Email provider (id "email")' + (method === "otp" ? " with generateVerificationToken returning 6 digits." : "."));
 
 // ---- dependencies
-const need = ["framer-motion", ...hooks.pkgs].filter((d) => !deps[d]);
+const need = ["framer-motion", ...hooks.pkgs, ...(middlewareFile && auth === "supabase" ? ["@supabase/ssr"] : [])].filter((d) => !deps[d]);
 if (need.length && !flag("no-install")) {
   const pm = ex("pnpm-lock.yaml") ? "pnpm" : ex("yarn.lock") ? "yarn" : ex("bun.lockb") || ex("bun.lock") ? "bun" : "npm";
   console.log(`Installing ${need.join(", ")} with ${pm}…`);
@@ -393,11 +522,14 @@ const envVars = {
   supabase: [pre + "SUPABASE_URL", pre + "SUPABASE_ANON_KEY"],
   clerk: isNext ? ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY"] : ["VITE_CLERK_PUBLISHABLE_KEY"],
   "next-auth": ["NEXTAUTH_URL", "NEXTAUTH_SECRET"],
+  webauthn: [],
 }[auth];
 const next = [...steps];
 if (envVars.length) next.splice(next.findIndex((x) => !x.startsWith("Install")) < 0 ? next.length : next.findIndex((x) => !x.startsWith("Install")), 0, `Add to ${isNext ? ".env.local" : ".env"}: ${envVars.join(", ")}`);
 if (auth === "clerk") next.push(`Wrap your app in <ClerkProvider publishableKey={...}>.`);
 if (auth === "next-auth") next.push("OAuth client ID/secret for each provider go in your NextAuth config.");
+if (middlewareFile && auth === "next-auth") next.push('Set `pages.signIn` to "/login" in your NextAuth config as well.');
+if (auth === "webauthn") next.push("WebAuthn starter requires server POST endpoints /api/generate-options and /api/verify with challenge storage, origin/RP validation, credential persistence, and mode-aware registration/authentication verification.");
 if (layout === "modal") next.push('Modal: use as the /login route, or render <authica trigger="Sign in" /> (props: open, onClose, trigger).');
 next.push("Start your dev server and open /login.");
 const routes = ["/login", ...extraRoutes];
@@ -437,3 +569,4 @@ const title = " authica ✔ ";
 console.log("\n╭" + title + "─".repeat(W - 2 - title.length) + "╮");
 for (const l of body) console.log("│ " + l.padEnd(inner) + " │");
 console.log("╰" + "─".repeat(W - 2) + "╯");
+}

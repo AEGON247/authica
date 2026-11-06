@@ -1,11 +1,11 @@
 <div align="center">
 
-# ⚡ authica
+# ⚡authica 🔏
 
 **Zero-config CLI that inspects your design tokens and injects polished, animated authentication routes into React & Next.js apps in seconds.**
 
-[![npm version](https://img.shields.io/npm/v/authica.svg?style=for-the-badge&color=8B5CF6&labelColor=0F172A)](https://www.npmjs.com/package/authica)
-[![npm downloads](https://img.shields.io/npm/dm/authica.svg?style=for-the-badge&color=3B82F6&labelColor=0F172A)](https://www.npmjs.com/package/authica)
+[![npm version](https://img.shields.io/npm/v/authica?style=for-the-badge&color=8B5CF6&labelColor=0F172A)](https://www.npmjs.com/package/authica)
+[![npm total downloads](https://img.shields.io/npm/dt/authica?style=for-the-badge&color=3B82F6&labelColor=0F172A)](https://www.npmjs.com/package/authica)
 [![License: MIT](https://img.shields.io/badge/License-MIT-10B981.svg?style=for-the-badge&labelColor=0F172A)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-EC4899.svg?style=for-the-badge&labelColor=0F172A)](http://makeapullrequest.com)
 
@@ -20,7 +20,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ ⚡ authica v1.2.0                                                             │
+│ ⚡ authica v2.0.0                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ? Global CSS path? (src/index.css)                                         │
@@ -47,6 +47,7 @@
 * **🎨 5 Layout Frameworks:** Choose between `split`, `centered`, `canvas`, `modal`, and `glass`.
 * **✨ 3 Aesthetic Presets:** Toggle between `default` (Shadcn-esque), `brutalist` (hard shadows, 2px borders), and `glassmorphism` (frosted blur).
 * **🔑 Pure Inline SVG OAuth:** Built-in crisp vector logos for **Google**, **GitHub**, **Apple**, **Discord**, and **Facebook**—no extra icon packages required.
+* **🧪 Opt-in tooling:** AST route insertion with regex fallback, an advisory token-storage scan, Next.js middleware starters, and an isolated local preview studio.
 
 
 
@@ -98,6 +99,27 @@ Skip prompts by passing flags directly:
 | **Supabase** | `--auth=supabase` | `@supabase/supabase-js` client initialization, `signInWithPassword`, `signUp`, and OAuth redirects. |
 | **Clerk** | `--auth=clerk` | `@clerk/react` or `@clerk/nextjs` hooks, auto-created `/sso-callback` redirect route. |
 | **Next-Auth** | `--auth=next-auth` | `signIn("credentials")` and provider mapping for Auth.js. |
+| **WebAuthn starter** | `--auth=webauthn` | Adds passkey sign-in/registration browser calls; requires your own verified server endpoints and credential storage. |
+
+### Opt-in developer tools
+
+These features do not change the default `npx authica` generation path:
+
+```sh
+npx authica --ast-inject --yes
+npx authica --auth=clerk --middleware --yes
+npx authica --scan-security --yes
+npx authica audit
+npx authica preview
+```
+
+* `--ast-inject` enables Recast/Babel route edits for Vite + React Router. If parsing fails, Authica tries its legacy injector; if it cannot place the route safely, it prints manual steps and leaves the router untouched. Next.js uses file-system routes, so there is no entry file to edit.
+* `--middleware` is Next.js-only and requires `--auth=supabase`, `--auth=clerk`, or `--auth=next-auth`. It protects `/dashboard`; existing middleware is backed up when `--force` is used. Supabase middleware also needs `@supabase/ssr`; NextAuth config should set `pages.signIn` to `/login` too.
+* `--scan-security` and `authica audit` perform a read-only heuristic scan for likely auth-token writes to `localStorage`. Findings are advisory and may be incomplete.
+* `--auth=webauthn` installs `@simplewebauthn/browser` in the target app unless `--no-install` is passed. Implement POST `/api/generate-options` and `/api/verify` on the server, including per-session challenge storage, origin/RP validation, credential persistence, and mode-aware registration/authentication verification. This starter is not a complete authentication backend and does not configure OAuth.
+* `authica preview` serves a local-only visual preview at `http://localhost:4321`; it does not install dependencies or write to the project.
+
+The CLI also accepts the existing `--layout`, `--style`, `--auth`, `--providers`, `--css`, and `--yes` options in non-interactive use. The Web Studio reference is [authica.dev](https://authica.dev).
 
 
 ## ⚙️ Configuration (`.authicarc`)
@@ -128,4 +150,3 @@ Distributed under the MIT License. See [`LICENSE`](https://www.google.com/search
 Made with ❤️ by [Sachin Mehta](https://github.com/AEGON247)
 
 [★ Star on GitHub](https://www.google.com/search?q=https://github.com/AEGON247/authica)
-

@@ -1,7 +1,7 @@
 {
   "name": "authica",
-  "version": "1.2.0",
-  "description": "Adds a theme-matched, animated sliding sign-in/sign-up page (split, centered or canvas) to Next.js or Vite + React Router projects.",
+  "version": "2.0.0",
+  "description": "Generates theme-matched authentication UI for Next.js and Vite, with opt-in AST safety tools and a local preview studio.",
   "type": "module",
   "bin": {
     "authica": "bin/cli.js"
@@ -13,10 +13,15 @@
   "engines": {
     "node": ">=18"
   },
+  "scripts": {
+    "test": "node --test"
+  },
   "keywords": [
     "authica",
     "auth",
     "authentication",
+    "webauthn",
+    "passkeys",
     "nextjs-auth",
     "supabase-auth",
     "clerk-auth",
@@ -31,5 +36,9 @@
     "url": "git+https://github.com/AEGON247/authica.git"
   },
   "homepage": "https://github.com/AEGON247/authica#readme",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@babel/parser": "^7.29.13",
+    "recast": "^0.24.0"
+  }
 }
